@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { loadDataset } from "./data/loader";
 import type { Dataset } from "./data/types";
+import { RiskSection } from "./sections/RiskSection";
+import { InsightsSection } from "./sections/InsightsSection";
 
 type State =
   | { status: "loading" }
@@ -49,8 +51,8 @@ export default function App() {
         <h1>Sales &amp; Churn Dashboard</h1>
         <p className="app__lede">
           SPRINT-1 foundation — repo scaffold, committed datasets and an
-          in-browser CSV loader with a schema guard. Overview, Sales, Risk and
-          Insights sections build on this.
+          in-browser CSV loader with a schema guard. The Risk and Insights
+          sections below read the same validated dataset.
         </p>
       </header>
 
@@ -94,6 +96,9 @@ export default function App() {
             <p className="status status--ok" role="status">
               ✓ Data foundation verified — both CSVs parsed and passed the schema guard.
             </p>
+
+            <RiskSection data={state.data} />
+            <InsightsSection data={state.data} />
           </>
         )}
       </main>
