@@ -24,6 +24,8 @@ import { SchemaError } from "./loader";
  * subsequent write to that story on save. (This is the S-6 defect.)
  */
 export const LEDGER_ENTRY_TYPES = [
+  "proposed",
+  "approved",
   "started",
   "blocked",
   "unblocked",
