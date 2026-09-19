@@ -4,3 +4,8 @@ dist-ssr
 *.local
 .DS_Store
 coverage
+
+# Review/screenshot artifacts dropped in the repo root — never committed.
+# Scoped to the root so real image assets under public/ and src/ are unaffected.
+/s[0-9]*-*.png
+/*.view.jpg

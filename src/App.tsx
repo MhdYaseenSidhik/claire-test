@@ -1,21 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { loadDataset } from "./data/loader";
 import type { Dataset } from "./data/types";
 import { RiskSection } from "./sections/RiskSection";
 import { InsightsSection } from "./sections/InsightsSection";
+import { OverviewSection } from "./sections/OverviewSection";
+import { SalesSection } from "./sections/SalesSection";
 
 type State =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; data: Dataset };
-
-function fmtCurrency(n: number): string {
-  return n.toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
-}
 
 export default function App() {
   const [state, setState] = useState<State>({ status: "loading" });
@@ -33,16 +27,10 @@ export default function App() {
     };
   }, []);
 
-  const summary = useMemo(() => {
-    if (state.status !== "ready") return null;
-    const { sales, customers } = state.data;
-    const totalRevenue = sales.reduce((a, r) => a + r.revenue, 0);
-    const weeks = new Set(sales.map((r) => r.week)).size;
-    const regions = new Set(sales.map((r) => r.region)).size;
-    const churned = customers.filter((c) => c.churned === 1).length;
-    const churnRate = customers.length ? (churned / customers.length) * 100 : 0;
-    return { totalRevenue, weeks, regions, customers: customers.length, churnRate };
-  }, [state]);
+  const isEmpty =
+    state.status === "ready" &&
+    state.data.sales.length === 0 &&
+    state.data.customers.length === 0;
 
   return (
     <div className="app">
@@ -53,6 +41,8 @@ export default function App() {
           SPRINT-1 foundation — repo scaffold, committed datasets and an
           in-browser CSV loader with a schema guard. The Risk and Insights
           sections below read the same validated dataset.
+          Weekly performance and regional breakdown from the committed dataset —
+          headline KPIs, revenue and orders trends, and per-region sales.
         </p>
       </header>
 
@@ -63,35 +53,18 @@ export default function App() {
 
         {state.status === "error" && (
           <div className="status status--error" role="alert">
-            <strong>Data foundation failed to load.</strong>
+            <strong>Data failed to load.</strong>
             <pre>{state.message}</pre>
           </div>
         )}
 
-        {state.status === "ready" && summary && (
-          <>
-            <section className="cards" aria-label="Data foundation health">
-              <div className="card">
-                <span className="card__label">Weeks loaded</span>
-                <span className="card__value">{summary.weeks}</span>
-                <span className="card__hint">across {summary.regions} regions</span>
-              </div>
-              <div className="card">
-                <span className="card__label">Total revenue</span>
-                <span className="card__value">{fmtCurrency(summary.totalRevenue)}</span>
-                <span className="card__hint">sales_weekly.csv</span>
-              </div>
-              <div className="card">
-                <span className="card__label">Customers</span>
-                <span className="card__value">{summary.customers}</span>
-                <span className="card__hint">customers.csv</span>
-              </div>
-              <div className="card">
-                <span className="card__label">Churn rate</span>
-                <span className="card__value">{summary.churnRate.toFixed(1)}%</span>
-                <span className="card__hint">retained vs churned</span>
-              </div>
-            </section>
+        {state.status === "ready" && isEmpty && (
+          <p className="status status--empty" role="status">
+            The dataset is empty — add rows to{" "}
+            <code>public/data/sales_weekly.csv</code> and{" "}
+            <code>public/data/customers.csv</code> to populate the dashboard.
+          </p>
+        )}
 
             <p className="status status--ok" role="status">
               ✓ Data foundation verified — both CSVs parsed and passed the schema guard.
@@ -99,12 +72,16 @@ export default function App() {
 
             <RiskSection data={state.data} />
             <InsightsSection data={state.data} />
+        {state.status === "ready" && !isEmpty && (
+          <>
+            <OverviewSection data={state.data} />
+            <SalesSection data={state.data} />
           </>
         )}
       </main>
 
       <footer className="app__footer">
-        Data foundation: <code>public/data/sales_weekly.csv</code> +{" "}
+        Source: <code>public/data/sales_weekly.csv</code> +{" "}
         <code>public/data/customers.csv</code>. Replace these files with real
         exports to drive the dashboard.
       </footer>
