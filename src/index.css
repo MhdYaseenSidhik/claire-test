@@ -10,6 +10,7 @@
   --ok-fg: #0f7a45;
   --err-bg: #fdecec;
   --err-fg: #b42318;
+  --warn: #d97706;
   --shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
 }
 
@@ -25,6 +26,7 @@
     --ok-fg: #4ade80;
     --err-bg: #2a1315;
     --err-fg: #f87171;
+    --warn: #f59e0b;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   }
 }
@@ -243,7 +245,7 @@ code {
 }
 
 .insight--warn {
-  border-left-color: #d97706;
+  border-left-color: var(--warn);
 }
 
 .insight--critical {
