@@ -70,6 +70,16 @@ describe("regionTotals", () => {
     expect(r[1].region).toBe("South");
     expect(r[1].share).toBeCloseTo(50);
   });
+
+  it("breaks a revenue tie by region name, independent of input row order", () => {
+    // South and North both total 300 here; feeding South-first must not
+    // change the output order — the tie-break sorts them alphabetically.
+    const tied: SalesWeek[] = [
+      { week: "2025-01-05", region: "South", revenue: 300, orders: 30, new_customers: 7 },
+      { week: "2025-01-05", region: "North", revenue: 300, orders: 20, new_customers: 5 },
+    ];
+    expect(regionTotals(tied).map((r) => r.region)).toEqual(["North", "South"]);
+  });
 });
 
 describe("regionNames", () => {
