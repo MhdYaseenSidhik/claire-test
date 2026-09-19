@@ -18,12 +18,15 @@ import { SchemaError } from "./loader";
 /**
  * The lifecycle events a CohortStory ledger entry may record.
  *
- * NOTE: `proposed` and `approved` are the story's own creation/approval
- * entries, written by the platform. They MUST be members of this enum — every
- * story carries them as ledger[0]/ledger[1], so omitting either rejects every
- * subsequent write to that story on save. (This is the S-6 defect.)
+ * `proposed` and `approved` are the story's own creation/approval entries,
+ * written by the platform. They are first-class members of this enum — every
+ * story carries them as ledger[0]/ledger[1], so omitting either rejected every
+ * subsequent write to that story on save (the S-6 defect). Widening the enum
+ * grandfathers those legacy entries and restores board writes.
  */
 export const LEDGER_ENTRY_TYPES = [
+  "proposed",
+  "approved",
   "started",
   "blocked",
   "unblocked",
