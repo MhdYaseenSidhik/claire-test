@@ -76,7 +76,7 @@ export function regionTotals(sales: SalesWeek[]): RegionTotal[] {
       orders: v.orders,
       share: total ? (v.revenue / total) * 100 : 0,
     }))
-    .sort((a, b) => b.revenue - a.revenue);
+    .sort((a, b) => b.revenue - a.revenue || a.region.localeCompare(b.region));
 }
 
 /** Distinct region names in stable, alphabetical order. */
