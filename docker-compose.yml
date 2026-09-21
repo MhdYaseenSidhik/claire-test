@@ -18,8 +18,13 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
+    # Shell form so BOTH URLs are probed: busybox wget only acts on the first
+    # argument, so two URLs must be two calls chained with &&. Matches the
+    # Dockerfile HEALTHCHECK so the app shell and the runtime CSV both return 200.
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/", "http://localhost:8080/data/sales_weekly.csv"]
+      test:
+        - "CMD-SHELL"
+        - "wget -q --spider http://localhost:8080/ && wget -q --spider http://localhost:8080/data/sales_weekly.csv"
       interval: 10s
       timeout: 3s
       start_period: 5s
