@@ -5,9 +5,40 @@ foundation**: the SPA scaffold, a committed synthetic dataset, and an in-browser
 CSV loader with a schema guard. The Overview, Sales, Risk and Insights sections
 (SPRINT-4 onward) build on this.
 
+## Run with Docker (one command)
+
+```bash
+docker compose up
+```
+
+That's the whole thing. Compose builds the production bundle in a multi-stage
+image and serves it with nginx, then blocks until the container reports
+**healthy** before telling you it's up. Open the app at:
+
+```
+http://localhost:8080
+```
+
+Stop it with `Ctrl-C`, then `docker compose down` to remove the containers.
+
+**There is no database, cache or queue in this app.** claire-dashboard is a
+static SPA: the CSVs under `public/data/` are baked into the image at build time
+and fetched at runtime by the browser from the same nginx that serves the page.
+So the compose stack is a single web service — the `readiness` helper alongside
+it exists only to make `docker compose up` wait on the app's healthcheck
+(`condition: service_healthy`), not because there is a backing service to order.
+
+To verify the stack end to end (validates compose, builds, waits for healthy,
+asserts `GET /` and `GET /data/sales_weekly.csv` both return 200):
+
+```bash
+./scripts/acceptance.sh
+```
+
 ## Prerequisites
 
-- Node 20+ and npm
+- Node 20+ and npm (for local development)
+- Docker with the Compose plugin (for `docker compose up`)
 
 ## Install
 
@@ -51,11 +82,21 @@ against the expected columns and types. On a missing column, a non-numeric
 the file and the offending field, rather than letting bad data reach the UI. The
 contract is pinned by `src/data/loader.test.ts`.
 
+## Container layout
+
+```
+Dockerfile           multi-stage: node:20-alpine build -> nginx:1.27-alpine runtime
+nginx.conf           static dist/ root, SPA history fallback, CSV content type
+docker-compose.yml   one-command stack, gated on the app's healthcheck
+.dockerignore        keeps node_modules, dist, .git and artifacts out of context
+scripts/acceptance.sh  end-to-end acceptance test for the compose stack
+```
+
 ## Project layout
 
 ```
 public/data/        committed CSV datasets
-scripts/            seeded data generator
+scripts/            seeded data generator + acceptance test
 src/
   data/
     types.ts        Dataset / SalesRow / CustomerRow types
