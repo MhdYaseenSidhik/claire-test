@@ -1,0 +1,33 @@
+# One command brings up the whole stack:  docker compose up
+#
+# claire-dashboard is a static SPA with NO database, cache or queue — so the
+# stack is a single web service. The `condition: service_healthy` gate below is
+# still meaningful: the `readiness` helper only reports "up" once the app's
+# container HEALTHCHECK has passed, giving `docker compose up` a definite,
+# observable "the app is serving" signal rather than "the container started".
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: claire-dashboard:local
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/", "http://localhost/data/sales_weekly.csv"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+
+  # Startup ordering: this exits 0 only after `app` reports healthy, so
+  # `docker compose up` blocks on the app actually serving. It runs no server.
+  readiness:
+    image: busybox:1.36
+    depends_on:
+      app:
+        condition: service_healthy
+    command: ["sh", "-c", "echo 'claire-dashboard is healthy and serving on http://localhost:8080'"]
+    restart: "no"
