@@ -20,6 +20,23 @@ function readEnvExample(): string {
   return readFileSync(envExamplePath, "utf8");
 }
 
+/**
+ * Every KEY= token that appears in the file, whether on a bare line or shown
+ * as a placeholder inside a comment. This is what catches a phantom key: a
+ * variable the code does not read being documented as if it did.
+ */
+function documentedKeys(text: string): string[] {
+  const keys = new Set<string>();
+  for (const rawLine of text.split(/\r?\n/)) {
+    // Strip a single leading comment marker so `#   BASE_URL=/` is inspected
+    // the same as a bare `BASE_URL=/`.
+    const line = rawLine.replace(/^\s*#\s?/, "").trim();
+    const m = line.match(/^([A-Z][A-Z0-9_]*)\s*=/);
+    if (m) keys.add(m[1]);
+  }
+  return [...keys].sort();
+}
+
 describe(".env.example (S-5)", () => {
   it("AC1: exists at the repo root", () => {
     expect(existsSync(envExamplePath)).toBe(true);
@@ -27,7 +44,7 @@ describe(".env.example (S-5)", () => {
 
   it("AC2: documents BASE_URL with a placeholder and an explanatory comment", () => {
     const text = readEnvExample();
-    // Placeholder assignment showing the shape of the value.
+    // Placeholder assignment showing the shape of the value (bare or in a comment).
     expect(text).toMatch(/^\s*#?\s*BASE_URL\s*=/m);
     // Names the code path it is read from and the mechanism that sets it.
     expect(text).toMatch(/import\.meta\.env\.BASE_URL/);
@@ -66,16 +83,13 @@ describe(".env.example (S-5)", () => {
     expect(hits).toEqual([]);
   });
 
-  it("guards against phantom keys: the only documented variable is BASE_URL", () => {
-    const text = readEnvExample();
-    // Collect uncommented KEY= assignments (real env entries, not prose in comments).
-    const assignments = text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0 && !line.startsWith("#"))
-      .map((line) => line.split("=")[0].trim())
-      .filter((key) => /^[A-Z][A-Z0-9_]*$/.test(key));
-    // The app reads exactly one env value; .env.example must not invent others.
-    expect(assignments).toEqual(["BASE_URL"]);
+  it("guards against phantom keys: documents no variable other than BASE_URL", () => {
+    // The app reads exactly one env value (import.meta.env.BASE_URL). The file
+    // may present it only as a commented placeholder — that is correct, since
+    // BASE_URL is not actually a runtime .env var. What must never happen is a
+    // second key appearing as if the code read it.
+    const keys = documentedKeys(readEnvExample());
+    const phantom = keys.filter((k) => k !== "BASE_URL");
+    expect(phantom).toEqual([]);
   });
 });
