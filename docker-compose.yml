@@ -16,7 +16,11 @@ services:
       - "8080:80"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost/", "http://localhost/data/sales_weekly.csv"]
+      # CMD-SHELL (not exec form): busybox wget fetches only its first URL
+      # argument, so both the app shell AND the committed CSV must be probed
+      # as two chained calls. A healthy container then proves the runtime CSV
+      # fetch the SPA depends on will succeed.
+      test: ["CMD-SHELL", "wget -q --spider http://localhost/ && wget -q --spider http://localhost/data/sales_weekly.csv"]
       interval: 10s
       timeout: 3s
       start_period: 5s
