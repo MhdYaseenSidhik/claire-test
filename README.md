@@ -28,6 +28,9 @@ So the compose stack is a single web service — the `readiness` helper alongsid
 it exists only to make `docker compose up` wait on the app's healthcheck
 (`condition: service_healthy`), not because there is a backing service to order.
 
+The runtime image runs nginx as the non-root `nginx` user, so it listens on the
+unprivileged port **8080** inside the container (mapped to 8080 on the host).
+
 To verify the stack end to end (validates compose, builds, waits for healthy,
 asserts `GET /` and `GET /data/sales_weekly.csv` both return 200):
 
@@ -85,8 +88,8 @@ contract is pinned by `src/data/loader.test.ts`.
 ## Container layout
 
 ```
-Dockerfile           multi-stage: node:20-alpine build -> nginx:1.27-alpine runtime
-nginx.conf           static dist/ root, SPA history fallback, CSV content type
+Dockerfile           multi-stage: node:20.18-alpine build -> nginx:1.27-alpine runtime (runs non-root on :8080)
+nginx.conf           static dist/ root, SPA history fallback, CSV content type, listens :8080
 docker-compose.yml   one-command stack, gated on the app's healthcheck
 .dockerignore        keeps node_modules, dist, .git and artifacts out of context
 scripts/acceptance.sh  end-to-end acceptance test for the compose stack
