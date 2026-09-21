@@ -5,6 +5,9 @@
 # still meaningful: the `readiness` helper only reports "up" once the app's
 # container HEALTHCHECK has passed, giving `docker compose up` a definite,
 # observable "the app is serving" signal rather than "the container started".
+#
+# The app container runs nginx as a non-root user, so it listens on the
+# unprivileged port 8080 inside the container (see Dockerfile / nginx.conf).
 
 services:
   app:
@@ -13,10 +16,10 @@ services:
       dockerfile: Dockerfile
     image: claire-dashboard:local
     ports:
-      - "8080:80"
+      - "8080:8080"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost/", "http://localhost/data/sales_weekly.csv"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/", "http://localhost:8080/data/sales_weekly.csv"]
       interval: 10s
       timeout: 3s
       start_period: 5s
