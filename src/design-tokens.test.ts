@@ -215,18 +215,30 @@ describe("defect clause — no literal colour or design pixel in a component", (
     expect(offenders).toEqual([]);
   });
 
-  it("no component .css hardcodes a design px length outside tokens.css", () => {
-    const allowed = /100%/;
+  // A hardcoded px on a spacing/radius/type property is where an off-token
+  // DESIGN value would hide, so those must read var(--…). Structural geometry
+  // is out of the token system's scope by design (DESIGN.md, Product Designer
+  // review): responsive grid track minimums (minmax), the documented 2px focus
+  // ring (outline/outline-offset), and the fixed sizes of visual primitives
+  // (chart/bar block-size, bar min-inline-size). Those are not design tokens.
+  const tokenisedProp =
+    /^(padding|margin|gap|border-radius|font-size|row-gap|column-gap)\b/;
+  // Known, accepted exception filed as advisory ADV-S8-1: the inline `code`
+  // chip uses `padding: 1px 5px` — a 5px inset that is not on the 4px spacing
+  // scale. Cosmetic on a non-interactive element; tracked as a follow-up, not
+  // an S-8 acceptance criterion. Listed here so a NEW off-token value fails.
+  const acceptedExceptions = [/^padding:\s*1px 5px;?$/];
+  it("no component .css hardcodes a px on a token-governed property (spacing/radius/type)", () => {
     const offenders: { file: string; line: string }[] = [];
     for (const file of filesUnder(srcDir, ".css")) {
       if (file.endsWith("tokens.css")) continue;
       for (const raw of stripComments(readFileSync(file, "utf8")).split("\n")) {
         const line = raw.trim();
+        if (!tokenisedProp.test(line)) continue;
         if (!pxDecl.test(line)) continue;
+        if (acceptedExceptions.some((re) => re.test(line))) continue;
         const residual = line.replace(/\b1px\b/g, "").replace(/\b0\b/g, "");
-        if (pxDecl.test(residual) && !allowed.test(residual)) {
-          offenders.push({ file, line });
-        }
+        if (pxDecl.test(residual)) offenders.push({ file, line });
       }
     }
     expect(offenders).toEqual([]);
