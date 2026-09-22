@@ -1,0 +1,24 @@
+# Keep the build context small and reproducible: dependencies and build
+# output are produced inside the image, and git/CI metadata never belongs in it.
+node_modules
+dist
+.git
+.github
+.gitignore
+
+# Local env / editor / OS noise
+.env
+.env.*
+.vscode
+.idea
+.DS_Store
+
+# Test and screenshot artifacts from the workspace
+*.png
+coverage
+.vite
+
+# Docker files themselves don't need to be in the context
+Dockerfile
+docker-compose.yml
+.dockerignore
