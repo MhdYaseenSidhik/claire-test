@@ -1,64 +1,52 @@
-# CI pipeline — ready to install, blocked only on token `workflow` scope
+# CI pipeline — ready to install
 
-This repository has **no** GitHub Actions workflow on `main`. Nothing runs on a
-pull request, so the review gates (install, type-check, lint, test, build) only
-ever ran on individual machines. That is exactly what this ticket exists to fix.
+This file is the ready-to-land CI workflow for `claire-test`. It cannot yet be
+written to `.github/workflows/ci.yml` because the connected GitHub token lacks
+the `workflow` OAuth scope: a `PUT` to `.github/workflows/*.yml` returns HTTP 404
+(GitHub's masked-403 for a missing-scope write), while a write to a sibling path
+in `.github/` — such as this file — succeeds. That difference is the proof the
+block is scope-specific, not a general write problem.
 
-## The pipeline
+## What it does
 
-The fix is one file — `.github/workflows/ci.yml` — that runs the five gates on
-every pull request and on every push to `main`, and **fails the build on any of
-them**. It uses `npm ci` against the committed `package-lock.json`, so the run is
-reproducible rather than machine-dependent.
+Runs on every pull request to `main` and on pushes to `main`. It executes the
+five gates a reviewer would otherwise run by hand, and **fails the build if any
+of them fails** — so a green PR is real evidence, not "it passed on my machine":
 
-| Gate       | Command             | Backed by (package.json) |
-|------------|---------------------|--------------------------|
-| Install    | `npm ci`            | `package-lock.json` committed |
-| Type-check | `npm run typecheck` | `tsc --noEmit` |
-| Lint       | `npm run lint`      | `eslint . --ext .ts,.tsx --max-warnings 0` |
-| Test       | `npm test`          | `vitest run` |
-| Build      | `npm run build`     | `tsc --noEmit && vite build` |
+1. `npm ci` — reproducible install from the committed `package-lock.json`
+2. `npm run build` — `tsc --noEmit && vite build`
+3. `npm run typecheck` — `tsc --noEmit`
+4. `npm run lint` — `eslint . --ext .ts,.tsx --max-warnings 0`
+5. `npm test` — `vitest run`
 
-## Why the workflow file itself is not in this commit
+## To install it (one of)
 
-The connected GitHub token (`MhdYaseenSidhik`) lacks the **`workflow`** OAuth
-scope. GitHub refuses any write to a path under `.github/workflows/` with an HTTP
-404 (its masked-403 for a missing-scope write) — re-confirmed on this branch,
-2026-09-21 — while a write to any other path, including this file in the same
-`.github/` directory on the same branch, succeeds. That proves the block is
-scope-specific, not a general write-permission problem.
+- **Grant the connected token the `workflow` OAuth scope**, then re-run this task —
+  the same `PUT` will then write `.github/workflows/ci.yml` and CI runs on the next PR; **or**
+- **A maintainer commits the YAML below directly** to `.github/workflows/ci.yml` on `main`.
 
-## To install CI (commander action, either one):
-
-1. **Grant the token the `workflow` scope** (GitHub → Settings → Developer
-   settings → the PAT / OAuth app used here → enable `workflow`), then re-run
-   this ticket — the YAML below will push and CI will start gating PRs; **or**
-2. **A maintainer commits the file directly** at `.github/workflows/ci.yml`
-   using the exact contents below.
-
-## Exact contents of `.github/workflows/ci.yml`
+## The workflow (`.github/workflows/ci.yml`)
 
 ```yaml
 name: CI
 
 on:
   pull_request:
+    branches: [main]
   push:
     branches: [main]
 
+# Cancel superseded runs on the same ref so a new push doesn't queue behind a stale one.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
-  verify:
-    name: install · typecheck · lint · test · build
+  gates:
+    name: install · build · type-check · lint · test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Check out the code
         uses: actions/checkout@v4
 
       - name: Set up Node.js
@@ -67,8 +55,11 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install (clean, from lockfile)
+      - name: Install dependencies (reproducible)
         run: npm ci
+
+      - name: Build
+        run: npm run build
 
       - name: Type-check
         run: npm run typecheck
@@ -78,7 +69,4 @@ jobs:
 
       - name: Test
         run: npm test
-
-      - name: Build
-        run: npm run build
 ```
