@@ -1,6 +1,6 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -11,10 +11,17 @@ import { describe, expect, it } from "vitest";
  * derived from the `base` option in vite.config.ts. There are no runtime
  * secrets, backend, database or custom VITE_* variables. .env.example must
  * document exactly that surface and nothing invented.
+ *
+ * The "env coverage" test below does NOT hardcode that fact: it scans the
+ * source for every environment variable the code actually reads and asserts
+ * .env.example documents each one. If a future change adds a new
+ * `import.meta.env.VITE_*` or `process.env.*` read, this test fails in CI
+ * until the variable is added to .env.example — that is the regression guard.
  */
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const envExamplePath = resolve(repoRoot, ".env.example");
+const srcRoot = resolve(repoRoot, "src");
 
 function readEnvExample(): string {
   return readFileSync(envExamplePath, "utf8");
@@ -35,6 +42,56 @@ function documentedKeys(text: string): string[] {
     if (m) keys.add(m[1]);
   }
   return [...keys].sort();
+}
+
+/** Every source file we scan for env access. */
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string) => {
+    for (const entry of readdirSync(d)) {
+      const p = join(d, entry);
+      if (statSync(p).isDirectory()) {
+        walk(p);
+      } else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry) && !/\.test\.[jt]sx?$/.test(entry)) {
+        out.push(p);
+      }
+    }
+  };
+  if (existsSync(dir)) walk(dir);
+  // vite.config.ts sits at the repo root, outside src/.
+  const viteConfig = resolve(repoRoot, "vite.config.ts");
+  if (existsSync(viteConfig)) out.push(viteConfig);
+  return out;
+}
+
+/**
+ * Vite injects these on import.meta.env regardless of any .env file, so they
+ * are never expected to be listed as configurable variables. BASE_URL is the
+ * one we document explicitly (it maps to vite.config.ts `base`), so it is NOT
+ * excluded here — the code reading it must be matched by documentation.
+ */
+const VITE_BUILTINS = new Set(["MODE", "DEV", "PROD", "SSR"]);
+
+/** Scan the source for every environment variable name the code reads. */
+function referencedEnvVars(): string[] {
+  const found = new Set<string>();
+  // import.meta.env.FOO and process.env.FOO / process.env["FOO"]
+  const patterns = [
+    /import\.meta\.env\.([A-Z][A-Z0-9_]*)/g,
+    /import\.meta\.env\[\s*["']([A-Z][A-Z0-9_]*)["']\s*\]/g,
+    /process\.env\.([A-Z][A-Z0-9_]*)/g,
+    /process\.env\[\s*["']([A-Z][A-Z0-9_]*)["']\s*\]/g,
+  ];
+  for (const file of sourceFiles(srcRoot)) {
+    const text = readFileSync(file, "utf8");
+    for (const re of patterns) {
+      for (const m of text.matchAll(re)) {
+        const name = m[1];
+        if (!VITE_BUILTINS.has(name)) found.add(name);
+      }
+    }
+  }
+  return [...found].sort();
 }
 
 describe(".env.example (S-5)", () => {
@@ -83,13 +140,24 @@ describe(".env.example (S-5)", () => {
     expect(hits).toEqual([]);
   });
 
-  it("guards against phantom keys: documents no variable other than BASE_URL", () => {
-    // The app reads exactly one env value (import.meta.env.BASE_URL). The file
-    // may present it only as a commented placeholder — that is correct, since
-    // BASE_URL is not actually a runtime .env var. What must never happen is a
-    // second key appearing as if the code read it.
-    const keys = documentedKeys(readEnvExample());
-    const phantom = keys.filter((k) => k !== "BASE_URL");
+  it("env coverage: every variable the code reads is documented in .env.example", () => {
+    // Data-driven regression guard. Derives the required set by scanning the
+    // source rather than trusting a hardcoded list, so a newly added env read
+    // that is not documented fails CI here.
+    const referenced = referencedEnvVars();
+    const documented = new Set(documentedKeys(readEnvExample()));
+    const undocumented = referenced.filter((v) => !documented.has(v));
+    expect(undocumented).toEqual([]);
+    // Sanity: the scan is actually finding the one variable the code reads.
+    expect(referenced).toContain("BASE_URL");
+  });
+
+  it("guards against phantom keys: documents no variable the code does not read", () => {
+    // The other direction of coverage: .env.example must not invent a variable
+    // that no source file reads (a phantom key the next person would hunt for).
+    const referenced = new Set(referencedEnvVars());
+    const documented = documentedKeys(readEnvExample());
+    const phantom = documented.filter((k) => !referenced.has(k));
     expect(phantom).toEqual([]);
   });
 });
