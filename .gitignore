@@ -5,6 +5,12 @@ dist-ssr
 .DS_Store
 coverage
 
+# Local environment files may hold real secrets — never commit them.
+# The checked-in template (.env.example) is the one exception and stays tracked.
+.env
+.env.*
+!.env.example
+
 # Review/screenshot artifacts dropped in the repo root — never committed.
 # Scoped to the root so real image assets under public/ and src/ are unaffected.
 /s[0-9]*-*.png
