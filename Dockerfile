@@ -29,13 +29,19 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
 # Run as the unprivileged "nginx" user (uid 101) that ships in the image.
-# A non-root master cannot bind :80 or write nginx's default pid/cache/log
-# paths, so relocate the pid to /tmp and grant the nginx user ownership of the
-# writable working directories. The main config's `user` directive is dropped
-# (it only applies when the master runs as root) to silence the startup warning.
+# A non-root master cannot bind :80 or write nginx's default pid path, so:
+#   - relocate the pid file to /tmp (the base image's default is `pid
+#     /run/nginx.pid`, which is root-owned and not writable by uid 101);
+#   - grant the nginx user ownership of the writable working directories;
+#   - drop the main config's `user` directive (it only applies when the master
+#     runs as root) to silence the startup warning.
+# The pid path is rewritten in nginx.conf to a non-root-writable location,
+# matching any of the paths the base image has shipped over time
+# (/run/nginx.pid on nginx:1.27-alpine, /var/run/nginx.pid on older tags).
 RUN set -eux; \
     sed -i 's|^user  *nginx;|# user directive removed: container runs as non-root|' /etc/nginx/nginx.conf; \
-    sed -i 's|/var/run/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf; \
+    sed -i -E 's|^[[:space:]]*pid[[:space:]]+/(var/)?run/nginx\.pid;|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf; \
+    grep -q '^pid /tmp/nginx.pid;' /etc/nginx/nginx.conf; \
     chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx; \
     touch /tmp/nginx.pid && chown nginx:nginx /tmp/nginx.pid
 
