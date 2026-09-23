@@ -5,6 +5,11 @@ dist-ssr
 .DS_Store
 coverage
 
+# Local env overrides — never commit a real .env; the tracked template is .env.example.
+.env
+.env.*
+!.env.example
+
 # Review/screenshot artifacts dropped in the repo root — never committed.
 # Scoped to the root so real image assets under public/ and src/ are unaffected.
 /s[0-9]*-*.png
