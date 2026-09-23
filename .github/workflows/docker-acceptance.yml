@@ -1,0 +1,101 @@
+name: docker-acceptance
+
+# Runtime acceptance for the S-9 production Dockerfile. The cohort sandbox has no
+# Docker daemon, so the only place the container is actually built and probed is
+# here, on a Docker-capable ubuntu-latest runner. This workflow is the source of
+# truth for the live S-9 criteria: non-root process, EXPOSE 8080, HEALTHCHECK
+# reaching healthy, and GET / and GET /data/sales_weekly.csv returning 200.
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "nginx.conf"
+      - "docker-compose.yml"
+      - "scripts/acceptance.sh"
+      - ".github/workflows/docker-acceptance.yml"
+  push:
+    branches:
+      - "feature/s-9-dockerfile-multi-stage-build-run-image-p"
+  workflow_dispatch: {}
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (clean, no host state)
+        uses: actions/checkout@v4
+
+      - name: Show Docker versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Build the multi-stage image
+        run: docker build -t claire-dashboard:ci .
+
+      - name: Start only the app service (do not gate on the readiness helper)
+        run: |
+          set -euo pipefail
+          # `docker compose up -d` would block on the readiness service's
+          # `service_healthy` dependency and abort the whole up if the app is not
+          # healthy within compose's internal deadline. Start just the app and
+          # poll its health ourselves, so a slow-to-healthy or crashing container
+          # yields its logs rather than an opaque "dependency failed to start".
+          docker compose up -d --build app
+
+      - name: Wait for the container to report healthy
+        run: |
+          set -euo pipefail
+          cid="$(docker compose ps -q app)"
+          [ -n "$cid" ] || { echo "FAIL: no container id for service app"; docker compose ps -a; exit 1; }
+          for i in $(seq 1 40); do
+            status="$(docker inspect -f '{{ .State.Health.Status }}' "$cid" 2>/dev/null || echo unknown)"
+            state="$(docker inspect -f '{{ .State.Status }}' "$cid" 2>/dev/null || echo unknown)"
+            echo "attempt $i: state=$state health=$status"
+            case "$status" in
+              healthy) echo "PASS: container reached healthy"; exit 0 ;;
+              unhealthy) echo "--- container logs ---"; docker logs "$cid" 2>&1 | tail -n 80; echo "FAIL: container became unhealthy"; exit 1 ;;
+            esac
+            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+              echo "--- container logs ---"; docker logs "$cid" 2>&1 | tail -n 80
+              echo "FAIL: container is $state before becoming healthy"; exit 1
+            fi
+            sleep 3
+          done
+          echo "--- container logs ---"; docker logs "$cid" 2>&1 | tail -n 80
+          echo "FAIL: timed out waiting for healthy"
+          exit 1
+
+      - name: Assert the runtime process is non-root (uid=101)
+        run: |
+          set -euo pipefail
+          cid="$(docker compose ps -q app)"
+          docker exec "$cid" id
+          uid="$(docker exec "$cid" id -u)"
+          echo "reported uid: $uid"
+          test "$uid" = "101" || { echo "FAIL: expected uid 101, got $uid"; exit 1; }
+          echo "PASS: runtime process runs as uid=101 (non-root)"
+
+      - name: Assert the image declares EXPOSE 8080
+        run: |
+          set -euo pipefail
+          ports="$(docker image inspect claire-dashboard:ci --format '{{ json .Config.ExposedPorts }}')"
+          echo "exposed ports: $ports"
+          echo "$ports" | grep -q '8080/tcp' || { echo "FAIL: 8080 not exposed"; exit 1; }
+          echo "PASS: EXPOSE 8080 is declared on the image"
+
+      - name: Assert GET / and GET /data/sales_weekly.csv return 200
+        run: |
+          set -euo pipefail
+          for path in "/" "/data/sales_weekly.csv"; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8080${path}")"
+            echo "GET ${path} -> ${code}"
+            test "$code" = "200" || { echo "FAIL: GET ${path} returned ${code}"; exit 1; }
+          done
+          echo "PASS: GET / and GET /data/sales_weekly.csv both return 200"
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans || true
