@@ -33,9 +33,13 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # paths, so relocate the pid to /tmp and grant the nginx user ownership of the
 # writable working directories. The main config's `user` directive is dropped
 # (it only applies when the master runs as root) to silence the startup warning.
+# The pid rewrite matches the whole `pid ...;` directive rather than a literal
+# path, because the base image declares it as `/run/nginx.pid` (not
+# `/var/run/nginx.pid`) — a path the non-root user cannot open, which crashes
+# nginx at startup with "open() /run/nginx.pid failed (13: Permission denied)".
 RUN set -eux; \
     sed -i 's|^user  *nginx;|# user directive removed: container runs as non-root|' /etc/nginx/nginx.conf; \
-    sed -i 's|/var/run/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf; \
+    sed -i 's|^pid .*;|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf; \
     chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx; \
     touch /tmp/nginx.pid && chown nginx:nginx /tmp/nginx.pid
 
