@@ -1,0 +1,47 @@
+name: S-3 compose acceptance
+
+# Runs the real Docker path for the one-command stack: `docker compose config`
+# validates, `docker compose up -d --build` brings the app up, compose waits on
+# the container HEALTHCHECK (condition: service_healthy), and GET / plus
+# GET /data/sales_weekly.csv must return 200. GitHub-hosted ubuntu runners ship
+# Docker and the Compose plugin, so scripts/acceptance.sh runs unchanged.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "nginx.conf"
+      - ".dockerignore"
+      - "scripts/acceptance.sh"
+      - ".github/workflows/s3-compose-acceptance.yml"
+      - "public/data/**"
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "nginx.conf"
+      - ".dockerignore"
+      - "scripts/acceptance.sh"
+      - ".github/workflows/s3-compose-acceptance.yml"
+      - "public/data/**"
+
+jobs:
+  compose-acceptance:
+    name: docker compose up serves healthy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the branch under test
+        uses: actions/checkout@v4
+
+      - name: Show Docker and Compose versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Run the S-3 acceptance script
+        run: |
+          chmod +x scripts/acceptance.sh
+          ./scripts/acceptance.sh
