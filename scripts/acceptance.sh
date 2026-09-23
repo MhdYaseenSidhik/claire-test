@@ -24,7 +24,21 @@ SERVICE="app"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-120}"
 
 pass() { printf '  PASS  %s\n' "$1"; }
-fail() { printf '  FAIL  %s\n' "$1"; exit 1; }
+
+# On any failure, dump what an operator would need to see: the app container's
+# nginx logs and its full health-probe history, then tear the stack down.
+diagnose() {
+  echo "----- diagnostics: app container logs -----"
+  docker compose logs app 2>&1 | tail -n 60 || true
+  local cid
+  cid="$(docker compose ps -q "$SERVICE" 2>/dev/null || true)"
+  if [ -n "$cid" ]; then
+    echo "----- diagnostics: health status + last probes -----"
+    docker inspect -f '{{ .State.Health.Status }}' "$cid" 2>/dev/null || true
+    docker inspect -f '{{ range .State.Health.Log }}exit={{ .ExitCode }} out={{ printf "%q" .Output }}{{ "\n" }}{{ end }}' "$cid" 2>/dev/null || true
+  fi
+}
+fail() { printf '  FAIL  %s\n' "$1"; diagnose; exit 1; }
 
 cleanup() { docker compose down -v --remove-orphans >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -33,9 +47,12 @@ echo "==> [1/5] docker compose config validates"
 docker compose config >/dev/null || fail "docker compose config did not validate"
 pass "compose file is valid"
 
-echo "==> [2/5] docker compose up -d --build"
-docker compose up -d --build || fail "docker compose up failed"
-pass "stack started"
+# Build and start only the app service, without --wait, so its healthcheck is
+# probed while we watch it here. Gating on the readiness helper's
+# `condition: service_healthy` is exercised separately in step 3a.
+echo "==> [2/5] docker compose up -d --build (app)"
+docker compose up -d --build "$SERVICE" || fail "docker compose up failed"
+pass "app service started"
 
 echo "==> [3/5] wait for '${SERVICE}' to report healthy (timeout ${WAIT_TIMEOUT}s)"
 cid="$(docker compose ps -q "$SERVICE")"
@@ -45,11 +62,17 @@ while :; do
   status="$(docker inspect -f '{{ .State.Health.Status }}' "$cid" 2>/dev/null || echo unknown)"
   case "$status" in
     healthy) pass "container is healthy"; break ;;
-    unhealthy) docker logs "$cid" | tail -n 40; fail "container became unhealthy" ;;
+    unhealthy) fail "container became unhealthy" ;;
   esac
-  [ "$(date +%s)" -lt "$deadline" ] || { docker logs "$cid" | tail -n 40; fail "timed out waiting for healthy (last: ${status})"; }
+  [ "$(date +%s)" -lt "$deadline" ] || fail "timed out waiting for healthy (last: ${status})"
   sleep 3
 done
+
+# The readiness helper depends_on app with condition: service_healthy, so bringing
+# it up is the real proof that `docker compose up` blocks on the healthcheck.
+echo "==> [3a/5] readiness gate (depends_on service_healthy) resolves"
+docker compose up -d readiness || fail "readiness gate did not resolve (compose did not see app healthy)"
+pass "compose waited on app health and started readiness"
 
 echo "==> [4/5] served page returns HTTP 200"
 code="$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/")"
