@@ -7,6 +7,7 @@ name: S-3 compose acceptance
 # Docker and the Compose plugin, so scripts/acceptance.sh runs unchanged.
 
 on:
+  workflow_dispatch: {}
   push:
     branches:
       - main
@@ -18,6 +19,7 @@ on:
       - "scripts/acceptance.sh"
       - ".github/workflows/s3-compose-acceptance.yml"
       - "public/data/**"
+      - "tests/**"
   pull_request:
     paths:
       - "Dockerfile"
@@ -27,6 +29,7 @@ on:
       - "scripts/acceptance.sh"
       - ".github/workflows/s3-compose-acceptance.yml"
       - "public/data/**"
+      - "tests/**"
 
 jobs:
   compose-acceptance:
