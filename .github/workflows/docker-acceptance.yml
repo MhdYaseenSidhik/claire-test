@@ -35,24 +35,36 @@ jobs:
       - name: Build the multi-stage image
         run: docker build -t claire-dashboard:ci .
 
-      - name: Bring the stack up
-        run: docker compose up -d --build
+      - name: Start only the app service (do not gate on the readiness helper)
+        run: |
+          set -euo pipefail
+          # `docker compose up -d` would block on the readiness service's
+          # `service_healthy` dependency and abort the whole up if the app is not
+          # healthy within compose's internal deadline. Start just the app and
+          # poll its health ourselves, so a slow-to-healthy or crashing container
+          # yields its logs rather than an opaque "dependency failed to start".
+          docker compose up -d --build app
 
       - name: Wait for the container to report healthy
         run: |
           set -euo pipefail
           cid="$(docker compose ps -q app)"
-          [ -n "$cid" ] || { echo "FAIL: no container id for service app"; exit 1; }
+          [ -n "$cid" ] || { echo "FAIL: no container id for service app"; docker compose ps -a; exit 1; }
           for i in $(seq 1 40); do
             status="$(docker inspect -f '{{ .State.Health.Status }}' "$cid" 2>/dev/null || echo unknown)"
-            echo "health: $status"
+            state="$(docker inspect -f '{{ .State.Status }}' "$cid" 2>/dev/null || echo unknown)"
+            echo "attempt $i: state=$state health=$status"
             case "$status" in
               healthy) echo "PASS: container reached healthy"; exit 0 ;;
-              unhealthy) docker logs "$cid" | tail -n 50; echo "FAIL: container became unhealthy"; exit 1 ;;
+              unhealthy) echo "--- container logs ---"; docker logs "$cid" 2>&1 | tail -n 80; echo "FAIL: container became unhealthy"; exit 1 ;;
             esac
+            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+              echo "--- container logs ---"; docker logs "$cid" 2>&1 | tail -n 80
+              echo "FAIL: container is $state before becoming healthy"; exit 1
+            fi
             sleep 3
           done
-          docker logs "$cid" | tail -n 50
+          echo "--- container logs ---"; docker logs "$cid" 2>&1 | tail -n 80
           echo "FAIL: timed out waiting for healthy"
           exit 1
 
